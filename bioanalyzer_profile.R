@@ -1,41 +1,95 @@
-### Read the raw data for the sample
-bio.ds12 <- read.csv("/data/win/rajewsky/lab_organization/sequencing_info/bioanalyzer_files/temp_nikos/2100 expert_High Sensitivity DNA Assay_DE72901937_2016-03-10_17-21-25_Sample1.csv", skip = 17, stringsAsFactors = F)
-bio.ds12$Time <- as.numeric(bio.ds12$Time)
-bio.ds12$Value <- as.numeric(bio.ds12$Value)
-bio.ds12 <- bio.ds12[!is.na(bio.ds12$Time), ]
+require(plyr)
 
-### Plot to happily reproduce the bioanalyzer profile created by the machine
-plot(bio.ds12$Time, bio.ds12$Value, type='l', col='red')
+#
+# Functions
+#
 
-### Introduce ladder positions and sizes seen in the bioanalyzer pdf
-ladder.positions <- c(43, 45.35, 50.95, 55.75, 60.40, 69.55, 77.6, 
-                      83.35, 88.05, 91.25, 95.35, 101.60)
-ladder.size <- c(35, 50, 100, 150, 200, 300, 400, 500, 600, 700, 1000, 2000)
+# Read Sample CSV and do some fixing on the Data Frame
+ReadBioanalyzerCSV = function(x) {
+	csv <- read.csv(x, skip = 17, stringsAsFactors = F)
+	csv <- csv[seq(1,nrow(csv)-2,1),]
+	csv <- as.data.frame(apply(csv, 2, as.numeric))
+	csv <-csv[!is.na(csv$Time), ]
+	return(csv)
+}
 
-### Plot time against size. 
-plot(ladder.positions, y=ladder.size)
+# Fix that nasty comma in the quote value
+FixAndSplit = function(x) { 
+		
+		strsplit(
+			gsub("\"(\\d+),(\\d+.*)\"","\\1\\2", x, perl=TRUE),
+		",") 
+}
 
-### The nonlinear relationship has to be found.
-### In this case logistic function gives a good fit
-plot(ladder.positions, y=plogis(ladder.size, scale=300))
-cor(plogis(ladder.size, scale=300), ladder.positions)
+# Read Results file, use a Regex to extract the right table, 
+# split by lines and return a table
+ReadLadderScale = function(f) {
+	ladder.list = strsplit(
+		gsub(".*Sample Name,Ladder.*Peak Table\r\n.*Time corrected area\r\n(.*)\r\n \r\nOverall.*","\\1",
+			readChar(f, file.info(f)$size)
+		), "\r\n"
+		)[[1]]
+	# Convert into a Data Frame after fixing the ugly comma-in-quotes issue
+	ladder.table = ldply(lapply(llply(ladder.list, FixAndSplit), ldply))
+	# Add colnames (not parsed due to encoding issues)
+	colnames(ladder.table) = c("Size","Concentration",
+							"Molarity","Observations",
+							"Area","Aligned_Migration_Time",
+							"Peak_Height","Peak_Width","PC_of_Total",
+							"Time_corrected_area")
+	
+	ladder.table[,c(1,2,3,5,6,7,8,9,10)] = apply(ladder.table[,c(1,2,3,5,6,7,8,9,10)], 2, as.numeric)
+	
+	return(ladder.table)
+}
 
-### Fit a model to transform between sizes and time
-fit <- glm(plogis(ladder.size, scale=300) ~ ladder.positions) 
+# Plot original and hypothetical scale
+plotScale = function(l.p, l.s) {
+	par(pty="s", mfrow=c(1,2))
 
-### For instance "predict" the fragment sizes under the ~99% of the distribution
-bio.ds12.subset <- bio.ds12[bio.ds12$Time >= 64.5 & bio.ds12$Time <= 96.5, 'Time']
-newdata <- data.frame("ladder.positions"=bio.ds12.subset)
-fragment.sizes <- round(as.numeric(qlogis(predict(fit, newdata), scale=300)))
+	### Plot time against size. 
+	plot(l.p, y=l.s, xlab="Ladder Positions", ylab="Ladder Sizes")
 
-### Plot them to see how they distribute
-plot(fragment.sizes, bio.ds12[bio.ds12$Time %in% bio.ds12.subset, 'Value']  )
+	### The nonlinear relationship has to be found.
+	### In this case logistic function gives a good fit
+	plot(l.p, y=plogis(l.s, scale=300), xlab="Ladder Positions", ylab="Logistic function")
+	cr = cor(plogis(l.s, scale=300), l.p)
+	legend("topleft", paste("Corr = ", cr, sep=""), bty="n")
 
+}
 
+# Fit logistic function to the data
+fitScale = function(ladder.positions, ladder.size) {		
+	### Fit a model to transform between sizes and time
+	fit <- glm(plogis(ladder.size, scale=300) ~ ladder.positions) 
+	return(fit)
+}
 
+# Adjust a sample using the fitting
+adjustSample = function(sp, fit, r){
+	sample.subset   <- sp[sp$Time >= r[1] & sp$Time <= r[2], ]
+	sample.df <- data.frame("ladder.positions" = sample.subset$Time)
+	fragment.sizes <- round(as.numeric(qlogis(predict(fit, sample.df), scale=300)))
+	return ( data.frame(Positions=fragment.sizes, Value=sample.subset$Value) )
+}
 
+# Wrapper using previous functions to read and parse bioanalyzer data
+ReadBioanalyzerData = function(d) {
+	# Read all files of the directory. 
+	# Must contain: 1 *Results.csv
+	# Must contain: at least 1 *Sample\d.csv	
+	input.files = list.files(d, pattern="*.csv", full.names=T)
+	
+	# Get sample files and names
+	sample.files = input.files[grepl("Sample", input.files)]
+	sample.tags   = gsub(".*_(.*).csv","\\1", sample.files)
 
+	# Parse the ladder data from the *Results.csv
+	ladder.table = ReadLadderScale( input.files[grepl("Results", input.files)] )
+	
+	# Load Sample files into a named list
+	sample.df = setNames(llply(sample.files, ReadBioanalyzerCSV), nm=sample.tags)
 
-
-
+	return(list(Ladder=ladder.table, Samples=sample.df))
+}
 
