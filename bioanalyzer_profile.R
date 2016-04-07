@@ -3,23 +3,27 @@ require(plyr)
 #
 # Functions
 #
+
+# Read Sample CSV and do some fixing on the Data Frame
 ReadBioanalyzerCSV = function(x) {
-	# Read CSV and do some fixing on the Data Frame
 	csv <- read.csv(x, skip = 17, stringsAsFactors = F)
 	csv <- csv[seq(1,nrow(csv)-2,1),]
 	csv <- as.data.frame(apply(csv, 2, as.numeric))
 	csv <-csv[!is.na(csv$Time), ]
 	return(csv)
 }
-FixAndSplit = function(x) { 
-				# Fix that nasty comma in the quote value
-				strsplit(
-					gsub("\"(\\d+),(\\d+.*)\"","\\1\\2", x, perl=TRUE),
-			    ",") 
-				}
 
+# Fix that nasty comma in the quote value
+FixAndSplit = function(x) { 
+		
+		strsplit(
+			gsub("\"(\\d+),(\\d+.*)\"","\\1\\2", x, perl=TRUE),
+		",") 
+}
+
+# Read Results file, use a Regex to extract the right table, 
+# split by lines and return a table
 ReadLadderScale = function(f) {
-	# Read file, use a Regex to find the right table, split by lines
 	ladder.list = strsplit(
 		gsub(".*Sample Name,Ladder.*Peak Table\r\n.*Time corrected area\r\n(.*)\r\n \r\nOverall.*","\\1",
 			readChar(f, file.info(f)$size)
@@ -39,9 +43,8 @@ ReadLadderScale = function(f) {
 	return(ladder.table)
 }
 
-CheckScale = function(l.p, l.s) {
-	
-# 	x11(width=20, height=20, title='', bg='white', type='cairo', pointsize=20, antialias='subpixel')
+# Plot original and hypothetical scale
+plotScale = function(l.p, l.s) {
 	par(pty="s", mfrow=c(1,2))
 
 	### Plot time against size. 
@@ -52,12 +55,25 @@ CheckScale = function(l.p, l.s) {
 	plot(l.p, y=plogis(l.s, scale=300), xlab="Ladder Positions", ylab="Logistic function")
 	cr = cor(plogis(l.s, scale=300), l.p)
 	legend("topleft", paste("Corr = ", cr, sep=""), bty="n")
-	
+
+}
+
+# Fit logistic function to the data
+fitScale = function(ladder.positions, ladder.size) {		
 	### Fit a model to transform between sizes and time
-	fit <- glm(plogis(l.s, scale=300) ~ l.p) 
+	fit <- glm(plogis(ladder.size, scale=300) ~ ladder.positions) 
 	return(fit)
 }
 
+# Adjust a sample using the fitting
+adjustSample = function(sp, fit, r){
+	sample.subset   <- sp[sp$Time >= r[1] & sp$Time <= r[2], ]
+	sample.df <- data.frame("ladder.positions" = sample.subset$Time)
+	fragment.sizes <- round(as.numeric(qlogis(predict(fit, sample.df), scale=300)))
+	return ( data.frame(Positions=fragment.sizes, Value=sample.subset$Value) )
+}
+
+# Wrapper using previous functions to read and parse bioanalyzer data
 ReadBioanalyzerData = function(d) {
 	# Read all files of the directory. 
 	# Must contain: 1 *Results.csv
