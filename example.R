@@ -4,17 +4,21 @@ source("~/bioanalyzer-profile/bioanalyzer_profile.R")
 # it must contain at least one *Results.csv and 1 *Sample*.csv files
 data = ReadBioanalyzerData("/data/win/rajewsky/lab_organization/sequencing_info/bioanalyzer_files/temp_nikos/")
 
-# Analyze fitting of the scale
+# Analyze fitting of the scale. Adjust scale for the best correlation possible 
+# (consider dropping high points of the range for better correlation)
+
 plotScale(data$Ladder$Aligned_Migration_Time, data$Ladder$Size)
+
 # If it fits, it sitz
 fit = fitScale(data$Ladder$Aligned_Migration_Time, data$Ladder$Size)
-
 
 # Use the fit to adjust one sample
 sample = data$Samples$Sample1
 
 # Adjust the sample (Range is the subset of the distribution we want to adjust
 # For instance = fragment sizes under the ~99% of the distribution
+# Ocasionally it will generate a warning: NaN produced due to the lack of a proper fitting
+# to high values
 sample.adjusted = adjustSample(sample, fit, r=c(64.5,96.5))
 
 ### Plot original bioanalyzer distribution vs adjusted (subset only)
@@ -26,4 +30,3 @@ plot(sample$Time, sample$Value, type='l', col='red',
 ### Plot them to see how they distribute
 plot(sample.adjusted$Position, sample.adjusted$Value, type='l', col='black', 
 	 xlab="Fragment Size", ylab="Value")
-

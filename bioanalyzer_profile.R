@@ -44,7 +44,7 @@ ReadLadderScale = function(f) {
 }
 
 # Plot original and hypothetical scale
-plotScale = function(l.p, l.s) {
+plotScale = function(l.p, l.s, fit.scale=300) {
 	par(pty="s", mfrow=c(1,2))
 
 	### Plot time against size. 
@@ -52,24 +52,24 @@ plotScale = function(l.p, l.s) {
 
 	### The nonlinear relationship has to be found.
 	### In this case logistic function gives a good fit
-	plot(l.p, y=plogis(l.s, scale=300), xlab="Ladder Positions", ylab="Logistic function")
-	cr = cor(plogis(l.s, scale=300), l.p)
+	plot(l.p, y=plogis(l.s, scale=fit.scale), xlab="Ladder Positions", ylab="Logistic function")
+	cr = cor(plogis(l.s, scale=fit.scale), l.p)
 	legend("topleft", paste("Corr = ", cr, sep=""), bty="n")
 
 }
 
 # Fit logistic function to the data
-fitScale = function(ladder.positions, ladder.size) {		
+fitScale = function(ladder.positions, ladder.size, fit.scale=300) {		
 	### Fit a model to transform between sizes and time
-	fit <- glm(plogis(ladder.size, scale=300) ~ ladder.positions) 
+	fit <- glm(plogis(ladder.size, scale=fit.scale) ~ ladder.positions) 
 	return(fit)
 }
 
 # Adjust a sample using the fitting
-adjustSample = function(sp, fit, r){
+adjustSample = function(sp, fit, r, fit.scale=300){
 	sample.subset   <- sp[sp$Time >= r[1] & sp$Time <= r[2], ]
 	sample.df <- data.frame("ladder.positions" = sample.subset$Time)
-	fragment.sizes <- round(as.numeric(qlogis(predict(fit, sample.df), scale=300)))
+	fragment.sizes <- round(as.numeric(qlogis(predict(fit, sample.df), scale=fit.scale)))
 	return ( data.frame(Positions=fragment.sizes, Value=sample.subset$Value) )
 }
 
